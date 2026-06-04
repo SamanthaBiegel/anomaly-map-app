@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Forest Browning Monitor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #111;
+        }
+
+        #map {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 56px;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: rgba(20, 20, 20, 0.92);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 16px;
+            z-index: 1000;
+        }
+
+        #btn-prev,
+        #btn-next {
+            background: none;
+            border: 1px solid #666;
+            color: #ddd;
+            font-size: 16px;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            border-radius: 4px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        #btn-prev:hover,
+        #btn-next:hover {
+            border-color: #ccc;
+            color: #fff;
+        }
+
+        #date-label {
+            color: #eee;
+            font-size: 14px;
+            font-weight: bold;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+
+        #slider {
+            flex: 1;
+            accent-color: #e07020;
+            cursor: pointer;
+        }
+
+        #slider:disabled,
+        #btn-prev:disabled,
+        #btn-next:disabled {
+            opacity: 0.4;
+            cursor: wait;
+        }
+
+        #status {
+            color: #aaa;
+            font-size: 12px;
+            min-width: 110px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        #status.loading {
+            color: #e07020;
+        }
+
+        .legend {
+            background: rgba(20, 20, 20, 0.88);
+            color: #ddd;
+            padding: 10px 12px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .legend strong {
+            font-size: 12px;
+        }
+
+        .legend-row {
+            display: flex;
+            align-items: center;
+            margin-top: 6px;
+            gap: 7px;
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+            border: 1px solid #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="map"></div>
+
+    <div id="controls">
+        <button id="btn-prev">&#8592;</button>
+        <span id="date-label">—</span>
+        <input id="slider" type="range" min="0" value="0" />
+        <button id="btn-next">&#8594;</button>
+        <span id="status"></span>
+    </div>
+
+    <script>
+        var map = L.map("map", { zoomControl: true, maxZoom: 18 }).setView([46.8, 8.2], 8);
+
+        L.tileLayer(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            { attribution: "&copy; Esri", opacity: 0.6, maxZoom: 18 }
+        ).addTo(map);
+
+        var dates = [];
+        var currentLayer = null;
+        var cfg = null;
+        var pendingId = 0;
+
+        var slider = document.getElementById("slider");
+        var dateLabel = document.getElementById("date-label");
+        var statusEl = document.getElementById("status");
+        var btnPrev = document.getElementById("btn-prev");
+        var btnNext = document.getElementById("btn-next");
+
+        function setStatus(msg, loading) {
+            statusEl.textContent = msg;
+            statusEl.className = loading ? "loading" : "";
+        }
+        function setLoading(loading) {
+            slider.disabled = loading;
+            btnPrev.disabled = loading;
+            btnNext.disabled = loading;
+            setStatus(loading ? "Loading…" : "", loading);
+        }
+
+        function loadDate(idx) {
+            if (!cfg || dates.length === 0) return;
+            var myId = ++pendingId;
+            dateLabel.textContent = dates[idx];
+            setLoading(true);
+
+            var newLayer = L.tileLayer(
+                window.location.origin + "/tiles/" + idx + "/{z}/{x}/{y}.png",
+                {
+                    opacity: 0.85,
+                    maxNativeZoom: 15,
+                    maxZoom: 18,
+                    tileSize: 256,
+                    updateWhenIdle: false,
+                }
+            );
+
+            newLayer.once("load", function () {
+                if (myId !== pendingId) { map.removeLayer(newLayer); return; }
+                if (currentLayer) map.removeLayer(currentLayer);
+                currentLayer = newLayer;
+                setLoading(false);
+            });
+
+            newLayer.on("tileerror", function (e) { console.warn("tile error", e); });
+            newLayer.addTo(map);
+        }
+
+        var debounceTimer = null;
+        slider.addEventListener("input", function () {
+            var idx = parseInt(slider.value);
+            dateLabel.textContent = dates[idx] || "—";
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () { loadDate(idx); }, 1200);
+        });
+
+        btnPrev.addEventListener("click", function () {
+            var v = Math.max(0, parseInt(slider.value) - 1);
+            slider.value = v;
+            clearTimeout(debounceTimer);
+            loadDate(v);
+        });
+        btnNext.addEventListener("click", function () {
+            var v = Math.min(dates.length - 1, parseInt(slider.value) + 1);
+            slider.value = v;
+            clearTimeout(debounceTimer);
+            loadDate(v);
+        });
+
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "ArrowLeft") btnPrev.click();
+            if (e.key === "ArrowRight") btnNext.click();
+        });
+
+        function buildLegend(colors, vmin, vmax) {
+            var legend = L.control({ position: "bottomright" });
+            legend.onAdd = function () {
+                var div = L.DomUtil.create("div", "legend");
+                var stops = [];
+                for (var i = 0; i <= 255; i += 25) stops.push(colors[Math.min(i, 255)]);
+                var grad = "linear-gradient(to right, " + stops.join(",") + ")";
+                div.innerHTML =
+                    "<strong>Anomaly score</strong>" +
+                    "<div style='width:180px;height:12px;margin:6px 0 2px;" +
+                    "border:1px solid #555;background:" + grad + ";'></div>" +
+                    "<div style='display:flex;justify-content:space-between;margin-bottom:4px;'>" +
+                    "<span>" + vmin.toFixed(1) + "</span><span>" + vmax.toFixed(1) + "</span>" +
+                    "</div>" +
+                    "<div class='legend-row'>" +
+                    "<div class='legend-swatch' style='background:#464646;'></div>" +
+                    "<span>Cloud / no valid observation</span>" +
+                    "</div>";
+                return div;
+            };
+            return legend;
+        }
+
+        function addSwitzerlandOutline() {
+            fetch("/switzerland")
+                .then(function (r) { return r.json(); })
+                .then(function (geojson) {
+                    L.geoJSON(geojson, {
+                        style: { color: "#ffffff", weight: 1.5, fillOpacity: 0, opacity: 0.7 }
+                    }).addTo(map);
+                });
+        }
+
+        Promise.all([
+            fetch("/config").then(function (r) { return r.json(); }),
+            fetch("/dates").then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            cfg = results[0];
+            dates = results[1].dates;
+
+            slider.max = dates.length - 1;
+            slider.value = 0;
+
+            buildLegend(cfg.colors, cfg.vmin, cfg.vmax).addTo(map);
+            addSwitzerlandOutline();
+            loadDate(0);
+        });
+    </script>
+</body>
+
+</html>

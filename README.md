@@ -14,7 +14,7 @@ Set the data directory environment variable:
 export FOREST_BROWNING_DATA_DIR=/path/to/data
 ```
 
-The required datasets (`forest_mask.npy`, `ndvi_dataset_temporal.zarr`, `ndvi_dataset_spatial.zarr`) are produced by [s2-forest-browning-monitoring](https://github.com/samanthabiegel/s2-forest-browning-monitoring).
+The required datasets (`forest_mask.npy`, `ndvi_dataset_spatial.zarr`) are produced by [s2-forest-browning-monitoring](https://github.com/samanthabiegel/s2-forest-browning-monitoring). The source data is available on [Zenodo](https://zenodo.org/records/20748737).
 
 ## Running
 

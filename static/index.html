@@ -24,6 +24,7 @@
             left: 0;
             right: 0;
             bottom: 56px;
+            background: #111;
         }
 
         #controls {
@@ -94,8 +95,8 @@
         }
 
         .legend {
-            background: rgba(20, 20, 20, 0.88);
-            color: #ddd;
+            background: rgba(255, 255, 255, 0.88);
+            color: #333;
             padding: 10px 12px;
             border-radius: 5px;
             font-family: Arial, sans-serif;
@@ -120,6 +121,11 @@
             flex-shrink: 0;
             border: 1px solid #555;
         }
+
+        .grey-basemap {
+            filter: grayscale(0.75) brightness(1.0);
+            opacity: 0.45;
+        }
     </style>
 </head>
 
@@ -139,8 +145,8 @@
         var map = L.map("map", { zoomControl: true, maxZoom: 18 }).setView([46.8, 8.2], 8);
 
         L.tileLayer(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            { attribution: "&copy; Esri", opacity: 0.6, maxZoom: 18 }
+            "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg",
+            { attribution: "&copy; swisstopo, CNES, Spot Image, NPOC", maxZoom: 19, className: "grey-basemap" }
         ).addTo(map);
 
         var dates = [];
@@ -174,8 +180,8 @@
             var newLayer = L.tileLayer(
                 window.location.origin + "/tiles/" + idx + "/{z}/{x}/{y}.png",
                 {
-                    opacity: 0.85,
-                    maxNativeZoom: 15,
+                    opacity: 0.8,
+                    maxNativeZoom: 18,
                     maxZoom: 18,
                     tileSize: 256,
                     updateWhenIdle: false,
@@ -228,14 +234,14 @@
                 var grad = "linear-gradient(to right, " + stops.join(",") + ")";
                 div.innerHTML =
                     "<strong>Anomaly score</strong>" +
-                    "<div style='width:180px;height:12px;margin:6px 0 2px;" +
-                    "border:1px solid #555;background:" + grad + ";'></div>" +
+                    "<div style='width:180px;height:9px;margin:6px 0 2px;" +
+                    "border:1px solid #aaa;background:" + grad + ";'></div>" +
                     "<div style='display:flex;justify-content:space-between;margin-bottom:4px;'>" +
-                    "<span>" + vmin.toFixed(1) + "</span><span>" + vmax.toFixed(1) + "</span>" +
+                    "<span>" + vmin.toFixed(0) + "</span><span>0 (normal)</span><span>+" + vmax.toFixed(0) + "</span>" +
                     "</div>" +
                     "<div class='legend-row'>" +
-                    "<div class='legend-swatch' style='background:#464646;'></div>" +
-                    "<span>Cloud / no valid observation</span>" +
+                    // "<div class='legend-swatch' style='background:transparent;border:1px solid #aaa;'></div>" +
+                    // "<span>Cloud / no valid observation</span>" +
                     "</div>";
                 return div;
             };

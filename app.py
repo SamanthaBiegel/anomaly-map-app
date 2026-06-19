@@ -30,9 +30,8 @@ matplotlib.use("Agg")
 
 # Constants
 _data_dir             = os.environ["FOREST_BROWNING_DATA_DIR"]
-FOREST_MASK           = f"{_data_dir}/forest_mask.npy"
-TEMPORAL_DATASET_ZARR = f"{_data_dir}/ndvi_dataset_temporal.zarr"
-SPATIAL_DATASET_ZARR  = f"{_data_dir}/ndvi_dataset_spatial.zarr"
+FOREST_MASK          = f"{_data_dir}/forest_mask.npy"
+SPATIAL_DATASET_ZARR = f"{_data_dir}/ndvi_dataset_spatial.zarr"
 REF_BBOX  = BoundingBox(left=2474090.0, bottom=1065110.0, right=2851370.0, top=1310530.0)
 REF_WIDTH = 37728
 
@@ -42,8 +41,8 @@ TILE_CACHE_DIR = Path(__file__).parent / "tile_cache"
 COG_CACHE_DIR.mkdir(exist_ok=True)
 TILE_CACHE_DIR.mkdir(exist_ok=True)
 
-SCORE_THRESHOLD   = -1.5
-VMIN, VMAX        = -7.0, -1.5
+SCORE_THRESHOLD   = 1.5   # magnitude threshold; scores in (-1.5, 1.5) are 0/normal
+VMIN, VMAX        = -7.0, 7.0
 TILE_SIZE         = 256
 WEB_MERCATOR_HALF = 20037508.342789244
 TARGET_ZOOM = 15
@@ -110,20 +109,18 @@ CROP_RIGHT  = REF_BBOX.left + (COL1 + 1) * _res
 CROP_TOP    = REF_BBOX.top  - ROW0 * _res
 CROP_BOTTOM = REF_BBOX.top  - (ROW1 + 1) * _res
 
-print("Opening zarr datasets...", flush=True)
-_ds_spatial  = zarr.open_group(str(SPATIAL_DATASET_ZARR),  mode="r")
-_ds_temporal = zarr.open_group(str(TEMPORAL_DATASET_ZARR), mode="r")
+print("Opening zarr dataset...", flush=True)
+_ds_spatial = zarr.open_group(str(SPATIAL_DATASET_ZARR), mode="r")
 SCORES = _ds_spatial["anomaly_scores"]
-_dates_raw = pd.to_datetime([d.decode("utf-8") for d in _ds_temporal["dates"][:]])
+_dates_raw = pd.to_datetime(list(_ds_spatial["dates"][:]))
 
 _sort_order = np.argsort(_dates_raw)
 DATES    = _dates_raw[_sort_order]
 ZARR_IDX = np.asarray(_sort_order, dtype=int)
 print(f"{len(DATES)} dates available ({DATES[0].date()} → {DATES[-1].date()}).", flush=True)
 
-# Colormap
-_c = plt.cm.inferno_r(np.linspace(0, 0.85, 256))
-_c[-1, :] = [0, 0, 0, 1]
+# Colormap: full BrBG — dark brown (VMIN) → white (0/normal) → dark teal (VMAX)
+_c = plt.cm.BrBG(np.linspace(0, 1, 256))
 _cmap = matplotlib.colors.LinearSegmentedColormap.from_list("custom", _c)
 HEX_COLORS = [matplotlib.colors.to_hex(_cmap(i / 255)) for i in range(256)]
 CMAP_RGB = np.array(
@@ -158,13 +155,13 @@ def _generate_cog(date_idx: int, final_path: Path) -> None:
     col = SCORES[zarr_idx, :].astype(np.float32)
 
     src = np.zeros((CROP_H, CROP_W), dtype=np.uint8)  # 0 = NODATA everywhere
-    mask_cloud   = np.isnan(col)
-    mask_anomaly = ~mask_cloud & (col <= SCORE_THRESHOLD)
+    mask_cloud = np.isnan(col)
+    mask_valid = ~mask_cloud  # all non-NaN forest pixels (score=0 for normal range)
 
     src[FOREST_ROWS[mask_cloud], FOREST_COLS[mask_cloud]] = QUANT_CLOUD
 
-    t = np.clip((col[mask_anomaly] - VMIN) / (VMAX - VMIN), 0.0, 1.0)
-    src[FOREST_ROWS[mask_anomaly], FOREST_COLS[mask_anomaly]] = (
+    t = np.clip((col[mask_valid] - VMIN) / (VMAX - VMIN), 0.0, 1.0)
+    src[FOREST_ROWS[mask_valid], FOREST_COLS[mask_valid]] = (
         QUANT_BIN_LO + t * QUANT_RANGE
     ).astype(np.uint8)
 
@@ -241,8 +238,6 @@ def _data_to_rgba(data: np.ndarray) -> np.ndarray:
     h, w = data.shape
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
 
-    rgba[data == QUANT_CLOUD] = [70, 70, 70, 230]
-
     anomaly_mask = data >= QUANT_BIN_LO
     if anomaly_mask.any():
         rgba[anomaly_mask, :3] = CMAP_RGB[data[anomaly_mask] - QUANT_BIN_LO]
@@ -293,7 +288,10 @@ def _precompute_all_cogs():
             print(f"precompute failed for date {idx}: {e}", flush=True)
 
 
-threading.Thread(target=_precompute_all_cogs, daemon=True).start()
+# Disabled: precomputing all COGs at startup generates ~175 GB in cog_cache/ and
+# takes tens of minutes. With this off, COGs are generated lazily per viewed date
+# (~100 MB each) on first tile request. Re-enable to warm the full cache up front.
+# threading.Thread(target=_precompute_all_cogs, daemon=True).start()
 
 
 # Routes
